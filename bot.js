@@ -1,10 +1,16 @@
 require('dotenv').config();
-const { Bot, InputFile } = require('grammy');
+const { Bot, Keyboard, InlineKeyboard } = require('grammy');
 const { runClaude } = require('./claude-runner');
-const { execSync, exec } = require('child_process');
+const { execSync } = require('child_process');
 const fs = require('fs');
-const path = require('path');
 const https = require('https');
+
+// Постоянная клавиатура быстрого доступа
+const MAIN_KEYBOARD = new Keyboard()
+  .text('📊 Логи').text('📁 Файлы').text('📍 Где я').row()
+  .text('🔄 Новая сессия').text('⛔ Отмена').text('🔍 Пинг')
+  .resized()
+  .persistent();
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
@@ -80,19 +86,51 @@ async function transcribeVoice(filePath) {
 
 bot.command('start', ctx => ctx.reply(
   'Claude Code Bridge\n\n' +
-  'Отправь любую задачу текстом или голосом — выполню на VPS.\n\n' +
-  '/ping    — проверить что Claude Code работает\n' +
-  '/reset   — новая сессия (сброс контекста)\n' +
-  '/status  — ID текущей сессии\n' +
-  '/cancel  — отменить выполняющуюся задачу\n' +
-  '/logs    — последние логи бота\n' +
-  '/files   — недавно изменённые файлы\n' +
-  '/where   — текущая рабочая папка'
+  'Отправь задачу текстом или голосом — выполню на VPS.\n\n' +
+  'Кнопки быстрого доступа появятся внизу экрана.',
+  { reply_markup: MAIN_KEYBOARD }
 ));
+
+// Кнопки клавиатуры
+bot.hears('📊 Логи', async ctx => {
+  try {
+    const out = execSync('tail -30 /root/.pm2/logs/claude-telegram-bridge-out.log 2>/dev/null || echo "Лог пуст"', { encoding: 'utf8' }).slice(-3500);
+    await ctx.reply(out || 'Логи пусты.');
+  } catch (e) { await ctx.reply('Ошибка: ' + e.message); }
+});
+bot.hears('📁 Файлы', async ctx => {
+  try {
+    const out = execSync('find ' + WORK_DIR + ' -newer ' + WORK_DIR + '/package.json -type f -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -20', { encoding: 'utf8' });
+    await ctx.reply(out.trim() || 'Изменённых файлов нет.');
+  } catch (e) { await ctx.reply('Ошибка: ' + e.message); }
+});
+bot.hears('📍 Где я', ctx => ctx.reply('Рабочая папка: ' + WORK_DIR));
+bot.hears('🔄 Новая сессия', ctx => { sessions.delete(ctx.chat.id); return ctx.reply('Сессия сброшена.'); });
+bot.hears('⛔ Отмена', ctx => {
+  if (inFlight.get(ctx.chat.id) === 'running') {
+    inFlight.set(ctx.chat.id, 'cancelled');
+    return ctx.reply('Отмена запрошена.');
+  }
+  return ctx.reply('Нет активных задач.');
+});
+bot.hears('🔍 Пинг', async ctx => {
+  const start = Date.now();
+  const msg = await ctx.reply('Проверяю...');
+  try {
+    const claudeBin = process.env.CLAUDE_BIN || 'claude';
+    const version = execSync(claudeBin + ' --version 2>&1', { encoding: 'utf8' }).trim();
+    const apiKey = process.env.ANTHROPIC_API_KEY ? 'есть ✅' : 'ОТСУТСТВУЕТ ❌';
+    await ctx.api.editMessageText(ctx.chat.id, msg.message_id,
+      'Claude Code работает\n\nВерсия: ' + version + '\nANTHROPIC_API_KEY: ' + apiKey + '\nРабочая папка: ' + WORK_DIR + '\nВремя: ' + (Date.now() - start) + ' мс'
+    );
+  } catch (e) {
+    await ctx.api.editMessageText(ctx.chat.id, msg.message_id, 'Claude Code не найден\n\n' + e.message);
+  }
+});
 
 bot.command('reset', ctx => {
   sessions.delete(ctx.chat.id);
-  return ctx.reply('Сессия сброшена. Следующее сообщение начнёт новый разговор.');
+  return ctx.reply('Сессия сброшена.');
 });
 
 bot.command('status', ctx => {
@@ -103,52 +141,15 @@ bot.command('status', ctx => {
 bot.command('cancel', ctx => {
   if (inFlight.get(ctx.chat.id) === 'running') {
     inFlight.set(ctx.chat.id, 'cancelled');
-    return ctx.reply('Отмена запрошена — Claude остановится после текущего шага.');
+    return ctx.reply('Отмена запрошена.');
   }
   return ctx.reply('Нет активных задач.');
 });
 
 bot.command('where', ctx => ctx.reply('Рабочая папка: ' + WORK_DIR));
-
-bot.command('ping', async ctx => {
-  const start = Date.now();
-  const msg = await ctx.reply('Проверяю Claude Code...');
-  try {
-    const { execSync } = require('child_process');
-    const claudeBin = process.env.CLAUDE_BIN || 'claude';
-    const version = execSync(claudeBin + ' --version 2>&1', { encoding: 'utf8' }).trim();
-    const elapsed = Date.now() - start;
-    await ctx.api.editMessageText(ctx.chat.id, msg.message_id,
-      'Claude Code работает\n\n' +
-      'Версия: ' + version + '\n' +
-      'Путь: ' + claudeBin + '\n' +
-      'Рабочая папка: ' + WORK_DIR + '\n' +
-      'Время ответа: ' + elapsed + ' мс'
-    );
-  } catch (e) {
-    await ctx.api.editMessageText(ctx.chat.id, msg.message_id,
-      'Claude Code не найден\n\nОшибка: ' + e.message + '\n\nПроверь CLAUDE_BIN в .env'
-    );
-  }
-});
-
-bot.command('logs', async (ctx) => {
-  try {
-    const out = execSync('pm2 logs claude-telegram-bridge --lines 30 --nostream 2>&1 || tail -30 ~/.pm2/logs/claude-telegram-bridge-out.log 2>/dev/null || echo "Логи недоступны"', { encoding: 'utf8' }).slice(-3500);
-    await ctx.reply(out || 'Логи пусты.');
-  } catch (e) {
-    await ctx.reply('Ошибка чтения логов: ' + e.message);
-  }
-});
-
-bot.command('files', async (ctx) => {
-  try {
-    const out = execSync('find ' + WORK_DIR + ' -newer ' + WORK_DIR + '/package.json -type f -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -20', { encoding: 'utf8' });
-    await ctx.reply(out.trim() || 'Изменённых файлов не найдено.');
-  } catch (e) {
-    await ctx.reply('Ошибка: ' + e.message);
-  }
-});
+bot.command('ping', ctx => ctx.reply('Используй кнопку 🔍 Пинг или /start'));
+bot.command('logs', ctx => ctx.reply('Используй кнопку 📊 Логи или /start'));
+bot.command('files', ctx => ctx.reply('Используй кнопку 📁 Файлы или /start'));
 
 // ─── Voice handler ───────────────────────────────────────────────────────────
 
