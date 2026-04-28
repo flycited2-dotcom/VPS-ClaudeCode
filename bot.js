@@ -1,157 +1,240 @@
 require('dotenv').config();
-const { Bot } = require('grammy');
+const { Bot, InputFile } = require('grammy');
 const { runClaude } = require('./claude-runner');
+const { execSync, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean)
-  .map(Number);
+  .split(',').map(s => s.trim()).filter(Boolean).map(Number);
 const UPDATE_INTERVAL = parseInt(process.env.STREAM_UPDATE_INTERVAL_MS || '2000', 10);
+const WORK_DIR = process.env.WORK_DIR || process.cwd();
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
-if (!TOKEN) {
-  console.error('TELEGRAM_BOT_TOKEN is not set in .env');
-  process.exit(1);
-}
+if (!TOKEN) { console.error('TELEGRAM_BOT_TOKEN not set'); process.exit(1); }
 
 const bot = new Bot(TOKEN);
-
-// chatId -> sessionId for conversation continuity
 const sessions = new Map();
-// chatId -> 'running' | 'cancelled'
 const inFlight = new Map();
 
-function isAllowed(userId) {
-  if (ALLOWED_IDS.length === 0) return true;
-  return ALLOWED_IDS.includes(userId);
+function isAllowed(id) {
+  return ALLOWED_IDS.length === 0 || ALLOWED_IDS.includes(id);
 }
 
 function splitText(text, maxLen) {
   const parts = [];
   let i = 0;
-  while (i < text.length) {
-    parts.push(text.slice(i, i + maxLen));
-    i += maxLen;
-  }
+  while (i < text.length) { parts.push(text.slice(i, i + maxLen)); i += maxLen; }
   return parts;
 }
 
-bot.command('start', async (ctx) => {
-  await ctx.reply(
-    'Claude Code Bridge\n\n' +
-    'Send me any task — I\'ll run it with Claude Code on the VPS.\n\n' +
-    '/reset — start a new conversation session\n' +
-    '/status — show current session ID\n' +
-    '/cancel — cancel running task'
-  );
-});
+function safeEdit(ctx, chatId, msgId, text) {
+  return ctx.api.editMessageText(chatId, msgId, text || '…').catch(() => {});
+}
 
-bot.command('help', async (ctx) => ctx.reply(
-  'Just send a message with your task.\n\n' +
-  '/reset — new session\n' +
-  '/status — session info\n' +
-  '/cancel — stop current task'
+// Download file from Telegram
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, (res) => {
+      res.pipe(file);
+      file.on('finish', () => { file.close(); resolve(); });
+    }).on('error', reject);
+  });
+}
+
+// Transcribe voice via OpenAI Whisper
+async function transcribeVoice(filePath) {
+  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY не настроен в .env');
+  const FormData = require('form-data');
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath), { filename: 'voice.ogg', contentType: 'audio/ogg' });
+  form.append('model', 'whisper-1');
+  form.append('language', 'ru');
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/v1/audio/transcriptions',
+      method: 'POST',
+      headers: { ...form.getHeaders(), Authorization: 'Bearer ' + OPENAI_API_KEY },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.text) resolve(json.text);
+          else reject(new Error(json.error && json.error.message || 'Whisper error'));
+        } catch { reject(new Error('Whisper parse error')); }
+      });
+    });
+    req.on('error', reject);
+    form.pipe(req);
+  });
+}
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+bot.command('start', ctx => ctx.reply(
+  'Claude Code Bridge\n\n' +
+  'Отправь любую задачу текстом или голосом — выполню на VPS.\n\n' +
+  '/reset   — новая сессия (сброс контекста)\n' +
+  '/status  — ID текущей сессии\n' +
+  '/cancel  — отменить выполняющуюся задачу\n' +
+  '/logs    — последние логи бота\n' +
+  '/files   — недавно изменённые файлы\n' +
+  '/where   — текущая рабочая папка'
 ));
 
-bot.command('reset', async (ctx) => {
+bot.command('reset', ctx => {
   sessions.delete(ctx.chat.id);
-  await ctx.reply('Session reset. Next message starts a fresh conversation.');
+  return ctx.reply('Сессия сброшена. Следующее сообщение начнёт новый разговор.');
 });
 
-bot.command('status', async (ctx) => {
+bot.command('status', ctx => {
   const sid = sessions.get(ctx.chat.id);
-  await ctx.reply(sid ? `Session ID: ${sid}` : 'No active session.');
+  return ctx.reply(sid ? 'Сессия: ' + sid : 'Нет активной сессии.');
 });
 
-bot.command('cancel', async (ctx) => {
+bot.command('cancel', ctx => {
   if (inFlight.get(ctx.chat.id) === 'running') {
     inFlight.set(ctx.chat.id, 'cancelled');
-    await ctx.reply('Cancellation requested.');
-  } else {
-    await ctx.reply('No task is currently running.');
+    return ctx.reply('Отмена запрошена — Claude остановится после текущего шага.');
+  }
+  return ctx.reply('Нет активных задач.');
+});
+
+bot.command('where', ctx => ctx.reply('Рабочая папка: ' + WORK_DIR));
+
+bot.command('logs', async (ctx) => {
+  try {
+    const out = execSync('pm2 logs claude-telegram-bridge --lines 30 --nostream 2>&1 || tail -30 ~/.pm2/logs/claude-telegram-bridge-out.log 2>/dev/null || echo "Логи недоступны"', { encoding: 'utf8' }).slice(-3500);
+    await ctx.reply(out || 'Логи пусты.');
+  } catch (e) {
+    await ctx.reply('Ошибка чтения логов: ' + e.message);
   }
 });
 
-bot.on('message:text', async (ctx) => {
+bot.command('files', async (ctx) => {
+  try {
+    const out = execSync('find ' + WORK_DIR + ' -newer ' + WORK_DIR + '/package.json -type f -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -20', { encoding: 'utf8' });
+    await ctx.reply(out.trim() || 'Изменённых файлов не найдено.');
+  } catch (e) {
+    await ctx.reply('Ошибка: ' + e.message);
+  }
+});
+
+// ─── Voice handler ───────────────────────────────────────────────────────────
+
+bot.on('message:voice', async (ctx) => {
+  if (!isAllowed(ctx.from && ctx.from.id)) return ctx.reply('Access denied.');
+
+  const statusMsg = await ctx.reply('🎙 Распознаю голос…');
+  const msgId = statusMsg.message_id;
   const chatId = ctx.chat.id;
-  const userId = ctx.from?.id;
-  const text = ctx.message.text.trim();
 
-  if (!isAllowed(userId)) {
-    await ctx.reply('Access denied.');
-    return;
+  try {
+    const fileId = ctx.message.voice.file_id;
+    const fileInfo = await ctx.api.getFile(fileId);
+    const fileUrl = 'https://api.telegram.org/file/bot' + TOKEN + '/' + fileInfo.file_path;
+    const tmpPath = '/tmp/voice_' + Date.now() + '.ogg';
+
+    await downloadFile(fileUrl, tmpPath);
+    const text = await transcribeVoice(tmpPath);
+    fs.unlinkSync(tmpPath);
+
+    await safeEdit(ctx, chatId, msgId, '🎙 Вы сказали: ' + text + '\n\n⏳ Выполняю…');
+    await processTask(ctx, chatId, msgId, text);
+  } catch (err) {
+    await safeEdit(ctx, chatId, msgId, '❌ Голос: ' + err.message + '\n\nДобавьте OPENAI_API_KEY в .env для распознавания речи.');
   }
+});
 
+// ─── Text handler ────────────────────────────────────────────────────────────
+
+bot.on('message:text', async (ctx) => {
+  if (!isAllowed(ctx.from && ctx.from.id)) return ctx.reply('Access denied.');
+
+  const chatId = ctx.chat.id;
   if (inFlight.get(chatId) === 'running') {
-    await ctx.reply('A task is already running. Send /cancel to stop it.');
-    return;
+    return ctx.reply('Задача уже выполняется. /cancel для остановки.');
   }
 
+  const statusMsg = await ctx.reply('⏳ Выполняю…');
+  await processTask(ctx, chatId, statusMsg.message_id, ctx.message.text.trim());
+});
+
+// ─── Core task processor ─────────────────────────────────────────────────────
+
+async function processTask(ctx, chatId, msgId, prompt) {
   inFlight.set(chatId, 'running');
 
-  const statusMsg = await ctx.reply('⏳ Running…');
-  const msgId = statusMsg.message_id;
-
   let accumulated = '';
-  let lastEditedAt = 0;
+  let lastEdit = 0;
+  let toolStatus = '';
 
-  const flushEdit = async (final = false) => {
-    if (!accumulated) return;
+  const flush = async (final) => {
+    if (!accumulated && !final) return;
     const now = Date.now();
-    if (!final && now - lastEditedAt < UPDATE_INTERVAL) return;
-    lastEditedAt = now;
+    if (!final && now - lastEdit < UPDATE_INTERVAL) return;
+    lastEdit = now;
 
-    const preview = accumulated.slice(-3800);
-    const display = (final ? '' : '⏳ ') + preview + (final ? '' : '\n…');
-    try {
-      await ctx.api.editMessageText(chatId, msgId, display);
-    } catch {
-      // unchanged content or rate limit — skip
-    }
+    const body = accumulated.slice(-3600);
+    const indicator = final ? '' : (toolStatus ? '\n\n' + toolStatus + '\n…' : '\n\n⏳ Думаю…');
+    await safeEdit(ctx, chatId, msgId, body + indicator);
   };
 
   try {
     const sessionId = sessions.get(chatId);
 
-    const { text: result, sessionId: newSessionId } = await runClaude(text, {
+    const { text: result, sessionId: newSid, toolsUsed } = await runClaude(prompt, {
       sessionId,
       onChunk: async (chunk) => {
         if (inFlight.get(chatId) === 'cancelled') return;
         accumulated += chunk;
-        await flushEdit(false);
+        toolStatus = '';
+        await flush(false);
+      },
+      onTool: async (tool) => {
+        if (inFlight.get(chatId) === 'cancelled') return;
+        toolStatus = tool.label + (tool.detail ? ': `' + tool.detail + '`' : '');
+        await flush(false);
       },
     });
 
-    if (newSessionId) sessions.set(chatId, newSessionId);
+    if (newSid) sessions.set(chatId, newSid);
     if (!accumulated) accumulated = result;
+
+    // Append tools summary
+    if (toolsUsed && toolsUsed.length > 0) {
+      const summary = '\n\n─────\n🛠 Использовано: ' +
+        toolsUsed.map(t => t.label + (t.detail ? ' `' + t.detail.slice(0, 30) + '`' : '')).join(', ');
+      accumulated += summary;
+    }
 
     if (accumulated.length > 4000) {
       const parts = splitText(accumulated, 4000);
-      await ctx.api.editMessageText(chatId, msgId, parts[0]);
-      for (let i = 1; i < parts.length; i++) {
-        await ctx.reply(parts[i]);
-      }
+      await safeEdit(ctx, chatId, msgId, parts[0]);
+      for (let i = 1; i < parts.length; i++) await ctx.reply(parts[i]);
     } else {
-      await flushEdit(true);
+      await safeEdit(ctx, chatId, msgId, accumulated);
     }
 
   } catch (err) {
-    const errMsg = err?.message || String(err);
-    try {
-      await ctx.api.editMessageText(chatId, msgId, `❌ Error: ${errMsg}`);
-    } catch {
-      await ctx.reply(`❌ Error: ${errMsg}`);
-    }
+    const msg = '❌ ' + (err && err.message ? err.message : String(err));
+    await safeEdit(ctx, chatId, msgId, msg);
   } finally {
     inFlight.delete(chatId);
   }
-});
+}
 
-bot.catch((err) => {
-  console.error('Bot error:', err.message);
-});
-
+bot.catch(err => console.error('Bot error:', err.message));
 bot.start();
+
 console.log('Claude Code Telegram bridge started.');
-console.log(`Allowed user IDs: ${ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') : 'ALL (no restriction)'}`);
+console.log('Work dir:', WORK_DIR);
+console.log('Allowed IDs:', ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') : 'ALL');
+console.log('Voice (Whisper):', OPENAI_API_KEY ? 'enabled' : 'disabled (add OPENAI_API_KEY to .env)');

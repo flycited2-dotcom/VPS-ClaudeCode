@@ -1,28 +1,34 @@
 const { spawn } = require('child_process');
-const path = require('path');
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const WORK_DIR = process.env.WORK_DIR || process.cwd();
 const TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || '300000', 10);
 
-/**
- * Run Claude Code with a prompt in non-interactive mode.
- * Calls onChunk(text) with incremental text as it arrives.
- * Returns the full response text on completion.
- */
-function runClaude(prompt, { onChunk, sessionId } = {}) {
+const TOOL_LABELS = {
+  Bash: '🖥 Bash',
+  Edit: '✏️ Edit',
+  Write: '📝 Write',
+  Read: '📖 Read',
+  TodoWrite: '📋 Todo',
+  WebFetch: '🌐 Fetch',
+  WebSearch: '🔍 Search',
+  Glob: '🗂 Glob',
+  Grep: '🔎 Grep',
+  LS: '📁 LS',
+};
+
+function toolLabel(name) {
+  return TOOL_LABELS[name] || ('🔧 ' + name);
+}
+
+function runClaude(prompt, { onChunk, onTool, sessionId } = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       '--print',
       '--output-format', 'stream-json',
       '--dangerously-skip-permissions',
     ];
-
-    // Continue previous session if provided
-    if (sessionId) {
-      args.push('--resume', sessionId);
-    }
-
+    if (sessionId) args.push('--resume', sessionId);
     args.push(prompt);
 
     const proc = spawn(CLAUDE_BIN, args, {
@@ -34,6 +40,7 @@ function runClaude(prompt, { onChunk, sessionId } = {}) {
     let newSessionId = sessionId || null;
     let buffer = '';
     let timedOut = false;
+    const toolsUsed = [];
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -44,55 +51,55 @@ function runClaude(prompt, { onChunk, sessionId } = {}) {
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line
+      buffer = lines.pop();
 
       for (const line of lines) {
         if (!line.trim()) continue;
         let event;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          continue;
-        }
+        try { event = JSON.parse(line); } catch { continue; }
 
-        // stream-json emits {type, ...} events
         if (event.type === 'session_id') {
           newSessionId = event.session_id;
         }
 
         if (event.type === 'assistant') {
-          // content blocks inside assistant message
-          const content = event.message?.content || [];
+          const content = event.message && event.message.content ? event.message.content : [];
           for (const block of content) {
             if (block.type === 'text') {
               fullText += block.text;
               if (onChunk) onChunk(block.text);
             }
-          }
-        }
-
-        // tool_use result text (tool output summary)
-        if (event.type === 'tool_result') {
-          const text = event.content?.find(c => c.type === 'text')?.text;
-          if (text && onChunk) {
-            onChunk('\n`' + text.slice(0, 200) + (text.length > 200 ? '…`' : '`'));
+            if (block.type === 'tool_use') {
+              const label = toolLabel(block.name);
+              let detail = '';
+              if (block.name === 'Bash' && block.input && block.input.command) {
+                detail = block.input.command.slice(0, 60);
+              } else if ((block.name === 'Edit' || block.name === 'Write' || block.name === 'Read') && block.input && block.input.file_path) {
+                detail = block.input.file_path;
+              } else if (block.name === 'WebSearch' && block.input && block.input.query) {
+                detail = block.input.query.slice(0, 60);
+              } else if (block.name === 'WebFetch' && block.input && block.input.url) {
+                detail = block.input.url.slice(0, 60);
+              }
+              const toolInfo = { label, detail, name: block.name };
+              toolsUsed.push(toolInfo);
+              if (onTool) onTool(toolInfo);
+            }
           }
         }
       }
     });
 
-    proc.stderr.on('data', (data) => {
-      // stderr is Claude's own debug/status output, ignore unless debug needed
-    });
+    proc.stderr.on('data', () => {});
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
       if (timedOut) return;
-      if (code !== 0 && !fullText) {
-        reject(new Error(`Claude exited with code ${code}`));
-        return;
-      }
-      resolve({ text: fullText || '(no text response)', sessionId: newSessionId });
+      resolve({
+        text: fullText || '(no text response)',
+        sessionId: newSessionId,
+        toolsUsed,
+      });
     });
 
     proc.on('error', (err) => {
