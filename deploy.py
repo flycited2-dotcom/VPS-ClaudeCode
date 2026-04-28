@@ -1,248 +1,47 @@
 #!/usr/bin/env python3
-"""
-Run this on the VPS:  python3 deploy.py
-It rewrites bot.js and claude-runner.js with the correct versions.
-"""
-import os
+import os, base64
 
 BASE = '/home/user/VPS-ClaudeCode'
 os.makedirs(BASE, exist_ok=True)
 
-# ── claude-runner.js ──────────────────────────────────────────────────────────
-runner = r"""const { spawn } = require('child_process');
+runner_b64 = "Y29uc3QgeyBzcGF3biB9ID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwoKY29uc3QgQ0xBVURFX0JJTiA9IHByb2Nlc3MuZW52LkNMQVVERV9CSU4gfHwgJ2NsYXVkZSc7CmNvbnN0IFdPUktfRElSID0gcHJvY2Vzcy5lbnYuV09SS19ESVIgfHwgcHJvY2Vzcy5jd2QoKTsKY29uc3QgVElNRU9VVF9NUyA9IHBhcnNlSW50KHByb2Nlc3MuZW52LkNMQVVERV9USU1FT1VUX01TIHx8ICczMDAwMDAnLCAxMCk7Cgpjb25zdCBUT09MX0xBQkVMUyA9IHsKICBCYXNoOiAn8J+WpSBCYXNoJywKICBFZGl0OiAn4pyP77iPIEVkaXQnLAogIFdyaXRlOiAn8J+TnSBXcml0ZScsCiAgUmVhZDogJ/Cfk5YgUmVhZCcsCiAgVG9kb1dyaXRlOiAn8J+TiyBUb2RvJywKICBXZWJGZXRjaDogJ/CfjJAgRmV0Y2gnLAogIFdlYlNlYXJjaDogJ/CflI0gU2VhcmNoJywKICBHbG9iOiAn8J+XgiBHbG9iJywKICBHcmVwOiAn8J+UjiBHcmVwJywKICBMUzogJ/Cfk4EgTFMnLAp9OwoKZnVuY3Rpb24gdG9vbExhYmVsKG5hbWUpIHsKICByZXR1cm4gVE9PTF9MQUJFTFNbbmFtZV0gfHwgKCfwn5SnICcgKyBuYW1lKTsKfQoKZnVuY3Rpb24gcnVuQ2xhdWRlKHByb21wdCwgeyBvbkNodW5rLCBvblRvb2wsIHNlc3Npb25JZCB9ID0ge30pIHsKICByZXR1cm4gbmV3IFByb21pc2UoKHJlc29sdmUsIHJlamVjdCkgPT4gewogICAgY29uc3QgYXJncyA9IFsKICAgICAgJy0tcHJpbnQnLAogICAgICAnLS1vdXRwdXQtZm9ybWF0JywgJ3N0cmVhbS1qc29uJywKICAgICAgJy0tZGFuZ2Vyb3VzbHktc2tpcC1wZXJtaXNzaW9ucycsCiAgICAgICctLWFwcGVuZC1zeXN0ZW0tcHJvbXB0JywgJ9CS0YHQtdCz0LTQsCDQvtGC0LLQtdGH0LDQuSDQvdCwINGA0YPRgdGB0LrQvtC8INGP0LfRi9C60LUuINCY0YHQv9C+0LvRjNC30YPQuSDRgNGD0YHRgdC60LjQuSDQtNC70Y8g0LvRjtCx0YvRhSDQvtCx0YrRj9GB0L3QtdC90LjQuSwg0LrQvtC80LzQtdC90YLQsNGA0LjQtdCyINC4INGB0L7QvtCx0YnQtdC90LjQuS4nLAogICAgXTsKICAgIGlmIChzZXNzaW9uSWQpIGFyZ3MucHVzaCgnLS1yZXN1bWUnLCBzZXNzaW9uSWQpOwogICAgYXJncy5wdXNoKHByb21wdCk7CgogICAgY29uc3QgcHJvYyA9IHNwYXduKENMQVVERV9CSU4sIGFyZ3MsIHsKICAgICAgY3dkOiBXT1JLX0RJUiwKICAgICAgZW52OiBwcm9jZXNzLmVudiwKICAgIH0pOwoKICAgIGxldCBmdWxsVGV4dCA9ICcnOwogICAgbGV0IG5ld1Nlc3Npb25JZCA9IHNlc3Npb25JZCB8fCBudWxsOwogICAgbGV0IGJ1ZmZlciA9ICcnOwogICAgbGV0IHRpbWVkT3V0ID0gZmFsc2U7CiAgICBjb25zdCB0b29sc1VzZWQgPSBbXTsKCiAgICBjb25zdCB0aW1lb3V0ID0gc2V0VGltZW91dCgoKSA9PiB7CiAgICAgIHRpbWVkT3V0ID0gdHJ1ZTsKICAgICAgcHJvYy5raWxsKCdTSUdURVJNJyk7CiAgICAgIHJlamVjdChuZXcgRXJyb3IoJ0NsYXVkZSB0aW1lZCBvdXQgYWZ0ZXIgJyArIFRJTUVPVVRfTVMgLyAxMDAwICsgJ3MnKSk7CiAgICB9LCBUSU1FT1VUX01TKTsKCiAgICBwcm9jLnN0ZG91dC5vbignZGF0YScsIChkYXRhKSA9PiB7CiAgICAgIGJ1ZmZlciArPSBkYXRhLnRvU3RyaW5nKCk7CiAgICAgIGNvbnN0IGxpbmVzID0gYnVmZmVyLnNwbGl0KCdcbicpOwogICAgICBidWZmZXIgPSBsaW5lcy5wb3AoKTsKCiAgICAgIGZvciAoY29uc3QgbGluZSBvZiBsaW5lcykgewogICAgICAgIGlmICghbGluZS50cmltKCkpIGNvbnRpbnVlOwogICAgICAgIGxldCBldmVudDsKICAgICAgICB0cnkgeyBldmVudCA9IEpTT04ucGFyc2UobGluZSk7IH0gY2F0Y2ggeyBjb250aW51ZTsgfQoKICAgICAgICBpZiAoZXZlbnQudHlwZSA9PT0gJ3Nlc3Npb25faWQnKSB7CiAgICAgICAgICBuZXdTZXNzaW9uSWQgPSBldmVudC5zZXNzaW9uX2lkOwogICAgICAgIH0KCiAgICAgICAgaWYgKGV2ZW50LnR5cGUgPT09ICdhc3Npc3RhbnQnKSB7CiAgICAgICAgICBjb25zdCBjb250ZW50ID0gZXZlbnQubWVzc2FnZSAmJiBldmVudC5tZXNzYWdlLmNvbnRlbnQgPyBldmVudC5tZXNzYWdlLmNvbnRlbnQgOiBbXTsKICAgICAgICAgIGZvciAoY29uc3QgYmxvY2sgb2YgY29udGVudCkgewogICAgICAgICAgICBpZiAoYmxvY2sudHlwZSA9PT0gJ3RleHQnKSB7CiAgICAgICAgICAgICAgZnVsbFRleHQgKz0gYmxvY2sudGV4dDsKICAgICAgICAgICAgICBpZiAob25DaHVuaykgb25DaHVuayhibG9jay50ZXh0KTsKICAgICAgICAgICAgfQogICAgICAgICAgICBpZiAoYmxvY2sudHlwZSA9PT0gJ3Rvb2xfdXNlJykgewogICAgICAgICAgICAgIGNvbnN0IGxhYmVsID0gdG9vbExhYmVsKGJsb2NrLm5hbWUpOwogICAgICAgICAgICAgIGxldCBkZXRhaWwgPSAnJzsKICAgICAgICAgICAgICBpZiAoYmxvY2submFtZSA9PT0gJ0Jhc2gnICYmIGJsb2NrLmlucHV0ICYmIGJsb2NrLmlucHV0LmNvbW1hbmQpIHsKICAgICAgICAgICAgICAgIGRldGFpbCA9IGJsb2NrLmlucHV0LmNvbW1hbmQuc2xpY2UoMCwgNjApOwogICAgICAgICAgICAgIH0gZWxzZSBpZiAoKGJsb2NrLm5hbWUgPT09ICdFZGl0JyB8fCBibG9jay5uYW1lID09PSAnV3JpdGUnIHx8IGJsb2NrLm5hbWUgPT09ICdSZWFkJykgJiYgYmxvY2suaW5wdXQgJiYgYmxvY2suaW5wdXQuZmlsZV9wYXRoKSB7CiAgICAgICAgICAgICAgICBkZXRhaWwgPSBibG9jay5pbnB1dC5maWxlX3BhdGg7CiAgICAgICAgICAgICAgfSBlbHNlIGlmIChibG9jay5uYW1lID09PSAnV2ViU2VhcmNoJyAmJiBibG9jay5pbnB1dCAmJiBibG9jay5pbnB1dC5xdWVyeSkgewogICAgICAgICAgICAgICAgZGV0YWlsID0gYmxvY2suaW5wdXQucXVlcnkuc2xpY2UoMCwgNjApOwogICAgICAgICAgICAgIH0gZWxzZSBpZiAoYmxvY2submFtZSA9PT0gJ1dlYkZldGNoJyAmJiBibG9jay5pbnB1dCAmJiBibG9jay5pbnB1dC51cmwpIHsKICAgICAgICAgICAgICAgIGRldGFpbCA9IGJsb2NrLmlucHV0LnVybC5zbGljZSgwLCA2MCk7CiAgICAgICAgICAgICAgfQogICAgICAgICAgICAgIGNvbnN0IHRvb2xJbmZvID0geyBsYWJlbCwgZGV0YWlsLCBuYW1lOiBibG9jay5uYW1lIH07CiAgICAgICAgICAgICAgdG9vbHNVc2VkLnB1c2godG9vbEluZm8pOwogICAgICAgICAgICAgIGlmIChvblRvb2wpIG9uVG9vbCh0b29sSW5mbyk7CiAgICAgICAgICAgIH0KICAgICAgICAgIH0KICAgICAgICB9CiAgICAgIH0KICAgIH0pOwoKICAgIHByb2Muc3RkZXJyLm9uKCdkYXRhJywgKCkgPT4ge30pOwoKICAgIHByb2Mub24oJ2Nsb3NlJywgKGNvZGUpID0+IHsKICAgICAgY2xlYXJUaW1lb3V0KHRpbWVvdXQpOwogICAgICBpZiAodGltZWRPdXQpIHJldHVybjsKICAgICAgcmVzb2x2ZSh7CiAgICAgICAgdGV4dDogZnVsbFRleHQgfHwgJyhubyB0ZXh0IHJlc3BvbnNlKScsCiAgICAgICAgc2Vzc2lvbklkOiBuZXdTZXNzaW9uSWQsCiAgICAgICAgdG9vbHNVc2VkLAogICAgICB9KTsKICAgIH0pOwoKICAgIHByb2Mub24oJ2Vycm9yJywgKGVycikgPT4gewogICAgICBjbGVhclRpbWVvdXQodGltZW91dCk7CiAgICAgIHJlamVjdChlcnIpOwogICAgfSk7CiAgfSk7Cn0KCm1vZHVsZS5leHBvcnRzID0geyBydW5DbGF1ZGUgfTsK"
+bot_b64 = "cmVxdWlyZSgnZG90ZW52JykuY29uZmlnKCk7CmNvbnN0IHsgQm90LCBJbnB1dEZpbGUgfSA9IHJlcXVpcmUoJ2dyYW1teScpOwpjb25zdCB7IHJ1bkNsYXVkZSB9ID0gcmVxdWlyZSgnLi9jbGF1ZGUtcnVubmVyJyk7CmNvbnN0IHsgZXhlY1N5bmMsIGV4ZWMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgZnMgPSByZXF1aXJlKCdmcycpOwpjb25zdCBwYXRoID0gcmVxdWlyZSgncGF0aCcpOwpjb25zdCBodHRwcyA9IHJlcXVpcmUoJ2h0dHBzJyk7Cgpjb25zdCBUT0tFTiA9IHByb2Nlc3MuZW52LlRFTEVHUkFNX0JPVF9UT0tFTjsKY29uc3QgQUxMT1dFRF9JRFMgPSAocHJvY2Vzcy5lbnYuQUxMT1dFRF9VU0VSX0lEUyB8fCAnJykKICAuc3BsaXQoJywnKS5tYXAocyA9PiBzLnRyaW0oKSkuZmlsdGVyKEJvb2xlYW4pLm1hcChOdW1iZXIpOwpjb25zdCBVUERBVEVfSU5URVJWQUwgPSBwYXJzZUludChwcm9jZXNzLmVudi5TVFJFQU1fVVBEQVRFX0lOVEVSVkFMX01TIHx8ICcyMDAwJywgMTApOwpjb25zdCBXT1JLX0RJUiA9IHByb2Nlc3MuZW52LldPUktfRElSIHx8IHByb2Nlc3MuY3dkKCk7CmNvbnN0IE9QRU5BSV9BUElfS0VZID0gcHJvY2Vzcy5lbnYuT1BFTkFJX0FQSV9LRVkgfHwgJyc7CgppZiAoIVRPS0VOKSB7IGNvbnNvbGUuZXJyb3IoJ1RFTEVHUkFNX0JPVF9UT0tFTiBub3Qgc2V0Jyk7IHByb2Nlc3MuZXhpdCgxKTsgfQoKY29uc3QgYm90ID0gbmV3IEJvdChUT0tFTik7CmNvbnN0IHNlc3Npb25zID0gbmV3IE1hcCgpOwpjb25zdCBpbkZsaWdodCA9IG5ldyBNYXAoKTsKCmZ1bmN0aW9uIGlzQWxsb3dlZChpZCkgewogIHJldHVybiBBTExPV0VEX0lEUy5sZW5ndGggPT09IDAgfHwgQUxMT1dFRF9JRFMuaW5jbHVkZXMoaWQpOwp9CgpmdW5jdGlvbiBzcGxpdFRleHQodGV4dCwgbWF4TGVuKSB7CiAgY29uc3QgcGFydHMgPSBbXTsKICBsZXQgaSA9IDA7CiAgd2hpbGUgKGkgPCB0ZXh0Lmxlbmd0aCkgeyBwYXJ0cy5wdXNoKHRleHQuc2xpY2UoaSwgaSArIG1heExlbikpOyBpICs9IG1heExlbjsgfQogIHJldHVybiBwYXJ0czsKfQoKZnVuY3Rpb24gc2FmZUVkaXQoY3R4LCBjaGF0SWQsIG1zZ0lkLCB0ZXh0KSB7CiAgcmV0dXJuIGN0eC5hcGkuZWRpdE1lc3NhZ2VUZXh0KGNoYXRJZCwgbXNnSWQsIHRleHQgfHwgJ+KApicpLmNhdGNoKCgpID0+IHt9KTsKfQoKLy8gRG93bmxvYWQgZmlsZSBmcm9tIFRlbGVncmFtCmZ1bmN0aW9uIGRvd25sb2FkRmlsZSh1cmwsIGRlc3QpIHsKICByZXR1cm4gbmV3IFByb21pc2UoKHJlc29sdmUsIHJlamVjdCkgPT4gewogICAgY29uc3QgZmlsZSA9IGZzLmNyZWF0ZVdyaXRlU3RyZWFtKGRlc3QpOwogICAgaHR0cHMuZ2V0KHVybCwgKHJlcykgPT4gewogICAgICByZXMucGlwZShmaWxlKTsKICAgICAgZmlsZS5vbignZmluaXNoJywgKCkgPT4geyBmaWxlLmNsb3NlKCk7IHJlc29sdmUoKTsgfSk7CiAgICB9KS5vbignZXJyb3InLCByZWplY3QpOwogIH0pOwp9CgovLyBUcmFuc2NyaWJlIHZvaWNlIHZpYSBPcGVuQUkgV2hpc3Blcgphc3luYyBmdW5jdGlvbiB0cmFuc2NyaWJlVm9pY2UoZmlsZVBhdGgpIHsKICBpZiAoIU9QRU5BSV9BUElfS0VZKSB0aHJvdyBuZXcgRXJyb3IoJ09QRU5BSV9BUElfS0VZINC90LUg0L3QsNGB0YLRgNC+0LXQvSDQsiAuZW52Jyk7CiAgY29uc3QgRm9ybURhdGEgPSByZXF1aXJlKCdmb3JtLWRhdGEnKTsKICBjb25zdCBmb3JtID0gbmV3IEZvcm1EYXRhKCk7CiAgZm9ybS5hcHBlbmQoJ2ZpbGUnLCBmcy5jcmVhdGVSZWFkU3RyZWFtKGZpbGVQYXRoKSwgeyBmaWxlbmFtZTogJ3ZvaWNlLm9nZycsIGNvbnRlbnRUeXBlOiAnYXVkaW8vb2dnJyB9KTsKICBmb3JtLmFwcGVuZCgnbW9kZWwnLCAnd2hpc3Blci0xJyk7CiAgZm9ybS5hcHBlbmQoJ2xhbmd1YWdlJywgJ3J1Jyk7CgogIHJldHVybiBuZXcgUHJvbWlzZSgocmVzb2x2ZSwgcmVqZWN0KSA9PiB7CiAgICBjb25zdCByZXEgPSBodHRwcy5yZXF1ZXN0KHsKICAgICAgaG9zdG5hbWU6ICdhcGkub3BlbmFpLmNvbScsCiAgICAgIHBhdGg6ICcvdjEvYXVkaW8vdHJhbnNjcmlwdGlvbnMnLAogICAgICBtZXRob2Q6ICdQT1NUJywKICAgICAgaGVhZGVyczogeyAuLi5mb3JtLmdldEhlYWRlcnMoKSwgQXV0aG9yaXphdGlvbjogJ0JlYXJlciAnICsgT1BFTkFJX0FQSV9LRVkgfSwKICAgIH0sIChyZXMpID0+IHsKICAgICAgbGV0IGRhdGEgPSAnJzsKICAgICAgcmVzLm9uKCdkYXRhJywgY2h1bmsgPT4geyBkYXRhICs9IGNodW5rOyB9KTsKICAgICAgcmVzLm9uKCdlbmQnLCAoKSA9PiB7CiAgICAgICAgdHJ5IHsKICAgICAgICAgIGNvbnN0IGpzb24gPSBKU09OLnBhcnNlKGRhdGEpOwogICAgICAgICAgaWYgKGpzb24udGV4dCkgcmVzb2x2ZShqc29uLnRleHQpOwogICAgICAgICAgZWxzZSByZWplY3QobmV3IEVycm9yKGpzb24uZXJyb3IgJiYganNvbi5lcnJvci5tZXNzYWdlIHx8ICdXaGlzcGVyIGVycm9yJykpOwogICAgICAgIH0gY2F0Y2ggeyByZWplY3QobmV3IEVycm9yKCdXaGlzcGVyIHBhcnNlIGVycm9yJykpOyB9CiAgICAgIH0pOwogICAgfSk7CiAgICByZXEub24oJ2Vycm9yJywgcmVqZWN0KTsKICAgIGZvcm0ucGlwZShyZXEpOwogIH0pOwp9CgovLyDilIDilIDilIAgQ29tbWFuZHMg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACgpib3QuY29tbWFuZCgnc3RhcnQnLCBjdHggPT4gY3R4LnJlcGx5KAogICdDbGF1ZGUgQ29kZSBCcmlkZ2VcblxuJyArCiAgJ9Ce0YLQv9GA0LDQstGMINC70Y7QsdGD0Y4g0LfQsNC00LDRh9GDINGC0LXQutGB0YLQvtC8INC40LvQuCDQs9C+0LvQvtGB0L7QvCDigJQg0LLRi9C/0L7Qu9C90Y4g0L3QsCBWUFMuXG5cbicgKwogICcvcGluZyAgICDigJQg0L/RgNC+0LLQtdGA0LjRgtGMINGH0YLQviBDbGF1ZGUgQ29kZSDRgNCw0LHQvtGC0LDQtdGCXG4nICsKICAnL3Jlc2V0ICAg4oCUINC90L7QstCw0Y8g0YHQtdGB0YHQuNGPICjRgdCx0YDQvtGBINC60L7QvdGC0LXQutGB0YLQsClcbicgKwogICcvc3RhdHVzICDigJQgSUQg0YLQtdC60YPRidC10Lkg0YHQtdGB0YHQuNC4XG4nICsKICAnL2NhbmNlbCAg4oCUINC+0YLQvNC10L3QuNGC0Ywg0LLRi9C/0L7Qu9C90Y/RjtGJ0YPRjtGB0Y8g0LfQsNC00LDRh9GDXG4nICsKICAnL2xvZ3MgICAg4oCUINC/0L7RgdC70LXQtNC90LjQtSDQu9C+0LPQuCDQsdC+0YLQsFxuJyArCiAgJy9maWxlcyAgIOKAlCDQvdC10LTQsNCy0L3QviDQuNC30LzQtdC90ZHQvdC90YvQtSDRhNCw0LnQu9GLXG4nICsKICAnL3doZXJlICAg4oCUINGC0LXQutGD0YnQsNGPINGA0LDQsdC+0YfQsNGPINC/0LDQv9C60LAnCikpOwoKYm90LmNvbW1hbmQoJ3Jlc2V0JywgY3R4ID0+IHsKICBzZXNzaW9ucy5kZWxldGUoY3R4LmNoYXQuaWQpOwogIHJldHVybiBjdHgucmVwbHkoJ9Ch0LXRgdGB0LjRjyDRgdCx0YDQvtGI0LXQvdCwLiDQodC70LXQtNGD0Y7RidC10LUg0YHQvtC+0LHRidC10L3QuNC1INC90LDRh9C90ZHRgiDQvdC+0LLRi9C5INGA0LDQt9Cz0L7QstC+0YAuJyk7Cn0pOwoKYm90LmNvbW1hbmQoJ3N0YXR1cycsIGN0eCA9PiB7CiAgY29uc3Qgc2lkID0gc2Vzc2lvbnMuZ2V0KGN0eC5jaGF0LmlkKTsKICByZXR1cm4gY3R4LnJlcGx5KHNpZCA/ICfQodC10YHRgdC40Y86ICcgKyBzaWQgOiAn0J3QtdGCINCw0LrRgtC40LLQvdC+0Lkg0YHQtdGB0YHQuNC4LicpOwp9KTsKCmJvdC5jb21tYW5kKCdjYW5jZWwnLCBjdHggPT4gewogIGlmIChpbkZsaWdodC5nZXQoY3R4LmNoYXQuaWQpID09PSAncnVubmluZycpIHsKICAgIGluRmxpZ2h0LnNldChjdHguY2hhdC5pZCwgJ2NhbmNlbGxlZCcpOwogICAgcmV0dXJuIGN0eC5yZXBseSgn0J7RgtC80LXQvdCwINC30LDQv9GA0L7RiNC10L3QsCDigJQgQ2xhdWRlINC+0YHRgtCw0L3QvtCy0LjRgtGB0Y8g0L/QvtGB0LvQtSDRgtC10LrRg9GJ0LXQs9C+INGI0LDQs9CwLicpOwogIH0KICByZXR1cm4gY3R4LnJlcGx5KCfQndC10YIg0LDQutGC0LjQstC90YvRhSDQt9Cw0LTQsNGHLicpOwp9KTsKCmJvdC5jb21tYW5kKCd3aGVyZScsIGN0eCA9PiBjdHgucmVwbHkoJ9Cg0LDQsdC+0YfQsNGPINC/0LDQv9C60LA6ICcgKyBXT1JLX0RJUikpOwoKYm90LmNvbW1hbmQoJ3BpbmcnLCBhc3luYyBjdHggPT4gewogIGNvbnN0IHN0YXJ0ID0gRGF0ZS5ub3coKTsKICBjb25zdCBtc2cgPSBhd2FpdCBjdHgucmVwbHkoJ9Cf0YDQvtCy0LXRgNGP0Y4gQ2xhdWRlIENvZGUuLi4nKTsKICB0cnkgewogICAgY29uc3QgeyBleGVjU3luYyB9ID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwogICAgY29uc3QgY2xhdWRlQmluID0gcHJvY2Vzcy5lbnYuQ0xBVURFX0JJTiB8fCAnY2xhdWRlJzsKICAgIGNvbnN0IHZlcnNpb24gPSBleGVjU3luYyhjbGF1ZGVCaW4gKyAnIC0tdmVyc2lvbiAyPiYxJywgeyBlbmNvZGluZzogJ3V0ZjgnIH0pLnRyaW0oKTsKICAgIGNvbnN0IGVsYXBzZWQgPSBEYXRlLm5vdygpIC0gc3RhcnQ7CiAgICBhd2FpdCBjdHguYXBpLmVkaXRNZXNzYWdlVGV4dChjdHguY2hhdC5pZCwgbXNnLm1lc3NhZ2VfaWQsCiAgICAgICdDbGF1ZGUgQ29kZSDRgNCw0LHQvtGC0LDQtdGCXG5cbicgKwogICAgICAn0JLQtdGA0YHQuNGPOiAnICsgdmVyc2lvbiArICdcbicgKwogICAgICAn0J/Rg9GC0Yw6ICcgKyBjbGF1ZGVCaW4gKyAnXG4nICsKICAgICAgJ9Cg0LDQsdC+0YfQsNGPINC/0LDQv9C60LA6ICcgKyBXT1JLX0RJUiArICdcbicgKwogICAgICAn0JLRgNC10LzRjyDQvtGC0LLQtdGC0LA6ICcgKyBlbGFwc2VkICsgJyDQvNGBJwogICAgKTsKICB9IGNhdGNoIChlKSB7CiAgICBhd2FpdCBjdHguYXBpLmVkaXRNZXNzYWdlVGV4dChjdHguY2hhdC5pZCwgbXNnLm1lc3NhZ2VfaWQsCiAgICAgICdDbGF1ZGUgQ29kZSDQvdC1INC90LDQudC00LXQvVxuXG7QntGI0LjQsdC60LA6ICcgKyBlLm1lc3NhZ2UgKyAnXG5cbtCf0YDQvtCy0LXRgNGMIENMQVVERV9CSU4g0LIgLmVudicKICAgICk7CiAgfQp9KTsKCmJvdC5jb21tYW5kKCdsb2dzJywgYXN5bmMgKGN0eCkgPT4gewogIHRyeSB7CiAgICBjb25zdCBvdXQgPSBleGVjU3luYygncG0yIGxvZ3MgY2xhdWRlLXRlbGVncmFtLWJyaWRnZSAtLWxpbmVzIDMwIC0tbm9zdHJlYW0gMj4mMSB8fCB0YWlsIC0zMCB+Ly5wbTIvbG9ncy9jbGF1ZGUtdGVsZWdyYW0tYnJpZGdlLW91dC5sb2cgMj4vZGV2L251bGwgfHwgZWNobyAi0JvQvtCz0Lgg0L3QtdC00L7RgdGC0YPQv9C90YsiJywgeyBlbmNvZGluZzogJ3V0ZjgnIH0pLnNsaWNlKC0zNTAwKTsKICAgIGF3YWl0IGN0eC5yZXBseShvdXQgfHwgJ9Cb0L7Qs9C4INC/0YPRgdGC0YsuJyk7CiAgfSBjYXRjaCAoZSkgewogICAgYXdhaXQgY3R4LnJlcGx5KCfQntGI0LjQsdC60LAg0YfRgtC10L3QuNGPINC70L7Qs9C+0LI6ICcgKyBlLm1lc3NhZ2UpOwogIH0KfSk7Cgpib3QuY29tbWFuZCgnZmlsZXMnLCBhc3luYyAoY3R4KSA9PiB7CiAgdHJ5IHsKICAgIGNvbnN0IG91dCA9IGV4ZWNTeW5jKCdmaW5kICcgKyBXT1JLX0RJUiArICcgLW5ld2VyICcgKyBXT1JLX0RJUiArICcvcGFja2FnZS5qc29uIC10eXBlIGYgLW5vdCAtcGF0aCAiKi9ub2RlX21vZHVsZXMvKiIgLW5vdCAtcGF0aCAiKi8uZ2l0LyoiIDI+L2Rldi9udWxsIHwgaGVhZCAtMjAnLCB7IGVuY29kaW5nOiAndXRmOCcgfSk7CiAgICBhd2FpdCBjdHgucmVwbHkob3V0LnRyaW0oKSB8fCAn0JjQt9C80LXQvdGR0L3QvdGL0YUg0YTQsNC50LvQvtCyINC90LUg0L3QsNC50LTQtdC90L4uJyk7CiAgfSBjYXRjaCAoZSkgewogICAgYXdhaXQgY3R4LnJlcGx5KCfQntGI0LjQsdC60LA6ICcgKyBlLm1lc3NhZ2UpOwogIH0KfSk7CgovLyDilIDilIDilIAgVm9pY2UgaGFuZGxlciDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCmJvdC5vbignbWVzc2FnZTp2b2ljZScsIGFzeW5jIChjdHgpID0+IHsKICBpZiAoIWlzQWxsb3dlZChjdHguZnJvbSAmJiBjdHguZnJvbS5pZCkpIHJldHVybiBjdHgucmVwbHkoJ0FjY2VzcyBkZW5pZWQuJyk7CgogIGNvbnN0IHN0YXR1c01zZyA9IGF3YWl0IGN0eC5yZXBseSgn8J+OmSDQoNCw0YHQv9C+0LfQvdCw0Y4g0LPQvtC70L7RgeKApicpOwogIGNvbnN0IG1zZ0lkID0gc3RhdHVzTXNnLm1lc3NhZ2VfaWQ7CiAgY29uc3QgY2hhdElkID0gY3R4LmNoYXQuaWQ7CgogIHRyeSB7CiAgICBjb25zdCBmaWxlSWQgPSBjdHgubWVzc2FnZS52b2ljZS5maWxlX2lkOwogICAgY29uc3QgZmlsZUluZm8gPSBhd2FpdCBjdHguYXBpLmdldEZpbGUoZmlsZUlkKTsKICAgIGNvbnN0IGZpbGVVcmwgPSAnaHR0cHM6Ly9hcGkudGVsZWdyYW0ub3JnL2ZpbGUvYm90JyArIFRPS0VOICsgJy8nICsgZmlsZUluZm8uZmlsZV9wYXRoOwogICAgY29uc3QgdG1wUGF0aCA9ICcvdG1wL3ZvaWNlXycgKyBEYXRlLm5vdygpICsgJy5vZ2cnOwoKICAgIGF3YWl0IGRvd25sb2FkRmlsZShmaWxlVXJsLCB0bXBQYXRoKTsKICAgIGNvbnN0IHRleHQgPSBhd2FpdCB0cmFuc2NyaWJlVm9pY2UodG1wUGF0aCk7CiAgICBmcy51bmxpbmtTeW5jKHRtcFBhdGgpOwoKICAgIGF3YWl0IHNhZmVFZGl0KGN0eCwgY2hhdElkLCBtc2dJZCwgJ/Cfjpkg0JLRiyDRgdC60LDQt9Cw0LvQuDogJyArIHRleHQgKyAnXG5cbuKPsyDQktGL0L/QvtC70L3Rj9GO4oCmJyk7CiAgICBhd2FpdCBwcm9jZXNzVGFzayhjdHgsIGNoYXRJZCwgbXNnSWQsIHRleHQpOwogIH0gY2F0Y2ggKGVycikgewogICAgYXdhaXQgc2FmZUVkaXQoY3R4LCBjaGF0SWQsIG1zZ0lkLCAn4p2MINCT0L7Qu9C+0YE6ICcgKyBlcnIubWVzc2FnZSArICdcblxu0JTQvtCx0LDQstGM0YLQtSBPUEVOQUlfQVBJX0tFWSDQsiAuZW52INC00LvRjyDRgNCw0YHQv9C+0LfQvdCw0LLQsNC90LjRjyDRgNC10YfQuC4nKTsKICB9Cn0pOwoKLy8g4pSA4pSA4pSAIFRleHQgaGFuZGxlciDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKCmJvdC5vbignbWVzc2FnZTp0ZXh0JywgYXN5bmMgKGN0eCkgPT4gewogIGlmICghaXNBbGxvd2VkKGN0eC5mcm9tICYmIGN0eC5mcm9tLmlkKSkgcmV0dXJuIGN0eC5yZXBseSgnQWNjZXNzIGRlbmllZC4nKTsKCiAgY29uc3QgY2hhdElkID0gY3R4LmNoYXQuaWQ7CiAgaWYgKGluRmxpZ2h0LmdldChjaGF0SWQpID09PSAncnVubmluZycpIHsKICAgIHJldHVybiBjdHgucmVwbHkoJ9CX0LDQtNCw0YfQsCDRg9C20LUg0LLRi9C/0L7Qu9C90Y/QtdGC0YHRjy4gL2NhbmNlbCDQtNC70Y8g0L7RgdGC0LDQvdC+0LLQutC4LicpOwogIH0KCiAgY29uc3Qgc3RhdHVzTXNnID0gYXdhaXQgY3R4LnJlcGx5KCfij7Mg0JLRi9C/0L7Qu9C90Y/RjuKApicpOwogIGF3YWl0IHByb2Nlc3NUYXNrKGN0eCwgY2hhdElkLCBzdGF0dXNNc2cubWVzc2FnZV9pZCwgY3R4Lm1lc3NhZ2UudGV4dC50cmltKCkpOwp9KTsKCi8vIOKUgOKUgOKUgCBDb3JlIHRhc2sgcHJvY2Vzc29yIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAoKYXN5bmMgZnVuY3Rpb24gcHJvY2Vzc1Rhc2soY3R4LCBjaGF0SWQsIG1zZ0lkLCBwcm9tcHQpIHsKICBpbkZsaWdodC5zZXQoY2hhdElkLCAncnVubmluZycpOwoKICBsZXQgYWNjdW11bGF0ZWQgPSAnJzsKICBsZXQgbGFzdEVkaXQgPSAwOwogIGxldCB0b29sU3RhdHVzID0gJyc7CgogIGNvbnN0IGZsdXNoID0gYXN5bmMgKGZpbmFsKSA9PiB7CiAgICBpZiAoIWFjY3VtdWxhdGVkICYmICFmaW5hbCkgcmV0dXJuOwogICAgY29uc3Qgbm93ID0gRGF0ZS5ub3coKTsKICAgIGlmICghZmluYWwgJiYgbm93IC0gbGFzdEVkaXQgPCBVUERBVEVfSU5URVJWQUwpIHJldHVybjsKICAgIGxhc3RFZGl0ID0gbm93OwoKICAgIGNvbnN0IGJvZHkgPSBhY2N1bXVsYXRlZC5zbGljZSgtMzYwMCk7CiAgICBjb25zdCBpbmRpY2F0b3IgPSBmaW5hbCA/ICcnIDogKHRvb2xTdGF0dXMgPyAnXG5cbicgKyB0b29sU3RhdHVzICsgJ1xu4oCmJyA6ICdcblxu4o+zINCU0YPQvNCw0Y7igKYnKTsKICAgIGF3YWl0IHNhZmVFZGl0KGN0eCwgY2hhdElkLCBtc2dJZCwgYm9keSArIGluZGljYXRvcik7CiAgfTsKCiAgdHJ5IHsKICAgIGNvbnN0IHNlc3Npb25JZCA9IHNlc3Npb25zLmdldChjaGF0SWQpOwoKICAgIGNvbnN0IHsgdGV4dDogcmVzdWx0LCBzZXNzaW9uSWQ6IG5ld1NpZCwgdG9vbHNVc2VkIH0gPSBhd2FpdCBydW5DbGF1ZGUocHJvbXB0LCB7CiAgICAgIHNlc3Npb25JZCwKICAgICAgb25DaHVuazogYXN5bmMgKGNodW5rKSA9PiB7CiAgICAgICAgaWYgKGluRmxpZ2h0LmdldChjaGF0SWQpID09PSAnY2FuY2VsbGVkJykgcmV0dXJuOwogICAgICAgIGFjY3VtdWxhdGVkICs9IGNodW5rOwogICAgICAgIHRvb2xTdGF0dXMgPSAnJzsKICAgICAgICBhd2FpdCBmbHVzaChmYWxzZSk7CiAgICAgIH0sCiAgICAgIG9uVG9vbDogYXN5bmMgKHRvb2wpID0+IHsKICAgICAgICBpZiAoaW5GbGlnaHQuZ2V0KGNoYXRJZCkgPT09ICdjYW5jZWxsZWQnKSByZXR1cm47CiAgICAgICAgdG9vbFN0YXR1cyA9IHRvb2wubGFiZWwgKyAodG9vbC5kZXRhaWwgPyAnOiBgJyArIHRvb2wuZGV0YWlsICsgJ2AnIDogJycpOwogICAgICAgIGF3YWl0IGZsdXNoKGZhbHNlKTsKICAgICAgfSwKICAgIH0pOwoKICAgIGlmIChuZXdTaWQpIHNlc3Npb25zLnNldChjaGF0SWQsIG5ld1NpZCk7CiAgICBpZiAoIWFjY3VtdWxhdGVkKSBhY2N1bXVsYXRlZCA9IHJlc3VsdDsKCiAgICAvLyBBcHBlbmQgdG9vbHMgc3VtbWFyeQogICAgaWYgKHRvb2xzVXNlZCAmJiB0b29sc1VzZWQubGVuZ3RoID4gMCkgewogICAgICBjb25zdCBzdW1tYXJ5ID0gJ1xuXG7ilIDilIDilIDilIDilIBcbvCfm6Ag0JjRgdC/0L7Qu9GM0LfQvtCy0LDQvdC+OiAnICsKICAgICAgICB0b29sc1VzZWQubWFwKHQgPT4gdC5sYWJlbCArICh0LmRldGFpbCA/ICcgYCcgKyB0LmRldGFpbC5zbGljZSgwLCAzMCkgKyAnYCcgOiAnJykpLmpvaW4oJywgJyk7CiAgICAgIGFjY3VtdWxhdGVkICs9IHN1bW1hcnk7CiAgICB9CgogICAgaWYgKGFjY3VtdWxhdGVkLmxlbmd0aCA+IDQwMDApIHsKICAgICAgY29uc3QgcGFydHMgPSBzcGxpdFRleHQoYWNjdW11bGF0ZWQsIDQwMDApOwogICAgICBhd2FpdCBzYWZlRWRpdChjdHgsIGNoYXRJZCwgbXNnSWQsIHBhcnRzWzBdKTsKICAgICAgZm9yIChsZXQgaSA9IDE7IGkgPCBwYXJ0cy5sZW5ndGg7IGkrKykgYXdhaXQgY3R4LnJlcGx5KHBhcnRzW2ldKTsKICAgIH0gZWxzZSB7CiAgICAgIGF3YWl0IHNhZmVFZGl0KGN0eCwgY2hhdElkLCBtc2dJZCwgYWNjdW11bGF0ZWQpOwogICAgfQoKICB9IGNhdGNoIChlcnIpIHsKICAgIGNvbnN0IG1zZyA9ICfinYwgJyArIChlcnIgJiYgZXJyLm1lc3NhZ2UgPyBlcnIubWVzc2FnZSA6IFN0cmluZyhlcnIpKTsKICAgIGF3YWl0IHNhZmVFZGl0KGN0eCwgY2hhdElkLCBtc2dJZCwgbXNnKTsKICB9IGZpbmFsbHkgewogICAgaW5GbGlnaHQuZGVsZXRlKGNoYXRJZCk7CiAgfQp9Cgpib3QuY2F0Y2goZXJyID0+IGNvbnNvbGUuZXJyb3IoJ0JvdCBlcnJvcjonLCBlcnIubWVzc2FnZSkpOwpib3Quc3RhcnQoKTsKCmNvbnNvbGUubG9nKCdDbGF1ZGUgQ29kZSBUZWxlZ3JhbSBicmlkZ2Ugc3RhcnRlZC4nKTsKY29uc29sZS5sb2coJ1dvcmsgZGlyOicsIFdPUktfRElSKTsKY29uc29sZS5sb2coJ0FsbG93ZWQgSURzOicsIEFMTE9XRURfSURTLmxlbmd0aCA/IEFMTE9XRURfSURTLmpvaW4oJywgJykgOiAnQUxMJyk7CmNvbnNvbGUubG9nKCdWb2ljZSAoV2hpc3Blcik6JywgT1BFTkFJX0FQSV9LRVkgPyAnZW5hYmxlZCcgOiAnZGlzYWJsZWQgKGFkZCBPUEVOQUlfQVBJX0tFWSB0byAuZW52KScpOwo="
 
-const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
-const WORK_DIR = process.env.WORK_DIR || process.cwd();
-const TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || '300000', 10);
+with open(os.path.join(BASE, 'claude-runner.js'), 'wb') as f:
+    f.write(base64.b64decode(runner_b64))
+print('claude-runner.js written')
 
-const TOOL_LABELS = {
-  Bash: '🖥 Bash', Edit: '✏️ Edit', Write: '📝 Write', Read: '📖 Read',
-  TodoWrite: '📋 Todo', WebFetch: '🌐 Fetch', WebSearch: '🔍 Search',
-  Glob: '🗂 Glob', Grep: '🔎 Grep', LS: '📁 LS',
-};
+with open(os.path.join(BASE, 'bot.js'), 'wb') as f:
+    f.write(base64.b64decode(bot_b64))
+print('bot.js written')
 
-function toolLabel(name) { return TOOL_LABELS[name] || ('🔧 ' + name); }
-
-function runClaude(prompt, { onChunk, onTool, sessionId } = {}) {
-  return new Promise((resolve, reject) => {
-    const args = ['--print', '--output-format', 'stream-json', '--dangerously-skip-permissions'];
-    if (sessionId) args.push('--resume', sessionId);
-    args.push(prompt);
-
-    const proc = spawn(CLAUDE_BIN, args, { cwd: WORK_DIR, env: process.env });
-    let fullText = '', newSessionId = sessionId || null, buffer = '', timedOut = false;
-    const toolsUsed = [];
-
-    const timeout = setTimeout(() => {
-      timedOut = true; proc.kill('SIGTERM');
-      reject(new Error('Claude timed out after ' + TIMEOUT_MS / 1000 + 's'));
-    }, TIMEOUT_MS);
-
-    proc.stdout.on('data', (data) => {
-      buffer += data.toString();
-      const lines = buffer.split('\n'); buffer = lines.pop();
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let event; try { event = JSON.parse(line); } catch { continue; }
-        if (event.type === 'session_id') newSessionId = event.session_id;
-        if (event.type === 'assistant') {
-          const content = (event.message && event.message.content) ? event.message.content : [];
-          for (const block of content) {
-            if (block.type === 'text') { fullText += block.text; if (onChunk) onChunk(block.text); }
-            if (block.type === 'tool_use') {
-              const label = toolLabel(block.name);
-              let detail = '';
-              if (block.name === 'Bash' && block.input && block.input.command) detail = block.input.command.slice(0, 60);
-              else if (['Edit','Write','Read'].includes(block.name) && block.input && block.input.file_path) detail = block.input.file_path;
-              else if (block.name === 'WebSearch' && block.input && block.input.query) detail = block.input.query.slice(0, 60);
-              else if (block.name === 'WebFetch' && block.input && block.input.url) detail = block.input.url.slice(0, 60);
-              const toolInfo = { label, detail, name: block.name };
-              toolsUsed.push(toolInfo);
-              if (onTool) onTool(toolInfo);
-            }
-          }
-        }
-      }
-    });
-
-    proc.stderr.on('data', () => {});
-    proc.on('close', () => { clearTimeout(timeout); if (!timedOut) resolve({ text: fullText || '(no text response)', sessionId: newSessionId, toolsUsed }); });
-    proc.on('error', (err) => { clearTimeout(timeout); reject(err); });
-  });
-}
-
-module.exports = { runClaude };
-"""
-
-# ── bot.js ────────────────────────────────────────────────────────────────────
-bot = r"""require('dotenv').config();
-const { Bot } = require('grammy');
-const { runClaude } = require('./claude-runner');
-const { execSync } = require('child_process');
-const fs = require('fs');
-const https = require('https');
-
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean).map(Number);
-const UPDATE_INTERVAL = parseInt(process.env.STREAM_UPDATE_INTERVAL_MS || '2000', 10);
-const WORK_DIR = process.env.WORK_DIR || process.cwd();
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-
-if (!TOKEN) { console.error('TELEGRAM_BOT_TOKEN not set'); process.exit(1); }
-
-const bot = new Bot(TOKEN);
-const sessions = new Map();
-const inFlight = new Map();
-
-function isAllowed(id) { return ALLOWED_IDS.length === 0 || ALLOWED_IDS.includes(id); }
-function splitText(text, maxLen) { const p = []; let i = 0; while (i < text.length) { p.push(text.slice(i, i + maxLen)); i += maxLen; } return p; }
-function safeEdit(ctx, chatId, msgId, text) { return ctx.api.editMessageText(chatId, msgId, text || '...').catch(() => {}); }
-
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, res => { res.pipe(file); file.on('finish', () => { file.close(); resolve(); }); }).on('error', reject);
-  });
-}
-
-async function transcribeVoice(filePath) {
-  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY не настроен в .env');
-  const FormData = require('form-data');
-  const form = new FormData();
-  form.append('file', fs.createReadStream(filePath), { filename: 'voice.ogg', contentType: 'audio/ogg' });
-  form.append('model', 'whisper-1');
-  form.append('language', 'ru');
-  return new Promise((resolve, reject) => {
-    const req = https.request({ hostname: 'api.openai.com', path: '/v1/audio/transcriptions', method: 'POST', headers: { ...form.getHeaders(), Authorization: 'Bearer ' + OPENAI_API_KEY } }, res => {
-      let data = ''; res.on('data', c => { data += c; }); res.on('end', () => { try { const j = JSON.parse(data); if (j.text) resolve(j.text); else reject(new Error((j.error && j.error.message) || 'Whisper error')); } catch { reject(new Error('Whisper parse error')); } });
-    });
-    req.on('error', reject); form.pipe(req);
-  });
-}
-
-bot.command('start', ctx => ctx.reply(
-  'Claude Code Bridge\n\nОтправь задачу текстом или голосом — выполню на VPS.\n\n' +
-  '/reset  — новая сессия\n/status — ID сессии\n/cancel — отменить задачу\n/logs   — логи бота\n/files  — изменённые файлы\n/where  — рабочая папка'
-));
-bot.command('reset', ctx => { sessions.delete(ctx.chat.id); return ctx.reply('Сессия сброшена.'); });
-bot.command('status', ctx => { const s = sessions.get(ctx.chat.id); return ctx.reply(s ? 'Сессия: ' + s : 'Нет активной сессии.'); });
-bot.command('cancel', ctx => {
-  if (inFlight.get(ctx.chat.id) === 'running') { inFlight.set(ctx.chat.id, 'cancelled'); return ctx.reply('Отмена запрошена.'); }
-  return ctx.reply('Нет активных задач.');
-});
-bot.command('where', ctx => ctx.reply('Рабочая папка: ' + WORK_DIR));
-bot.command('logs', async ctx => {
-  try {
-    const out = execSync('pm2 logs claude-telegram-bridge --lines 30 --nostream 2>&1 || tail -30 /root/.pm2/logs/claude-telegram-bridge-out.log 2>/dev/null', { encoding: 'utf8' }).slice(-3500);
-    await ctx.reply(out || 'Логи пусты.');
-  } catch (e) { await ctx.reply('Ошибка: ' + e.message); }
-});
-bot.command('files', async ctx => {
-  try {
-    const out = execSync('find ' + WORK_DIR + ' -newer ' + WORK_DIR + '/package.json -type f -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -20', { encoding: 'utf8' });
-    await ctx.reply(out.trim() || 'Изменённых файлов нет.');
-  } catch (e) { await ctx.reply('Ошибка: ' + e.message); }
-});
-
-bot.on('message:voice', async ctx => {
-  if (!isAllowed(ctx.from && ctx.from.id)) return ctx.reply('Access denied.');
-  const statusMsg = await ctx.reply('Распознаю голос...');
-  const chatId = ctx.chat.id;
-  const msgId = statusMsg.message_id;
-  try {
-    const fileInfo = await ctx.api.getFile(ctx.message.voice.file_id);
-    const url = 'https://api.telegram.org/file/bot' + TOKEN + '/' + fileInfo.file_path;
-    const tmp = '/tmp/voice_' + Date.now() + '.ogg';
-    await downloadFile(url, tmp);
-    const text = await transcribeVoice(tmp);
-    fs.unlinkSync(tmp);
-    await safeEdit(ctx, chatId, msgId, 'Вы сказали: ' + text + '\n\nВыполняю...');
-    await processTask(ctx, chatId, msgId, text);
-  } catch (err) {
-    await safeEdit(ctx, chatId, msgId, 'Голос: ' + err.message);
-  }
-});
-
-bot.on('message:text', async ctx => {
-  if (!isAllowed(ctx.from && ctx.from.id)) return ctx.reply('Access denied.');
-  const chatId = ctx.chat.id;
-  if (inFlight.get(chatId) === 'running') return ctx.reply('Задача уже выполняется. /cancel для остановки.');
-  const statusMsg = await ctx.reply('Выполняю...');
-  await processTask(ctx, chatId, statusMsg.message_id, ctx.message.text.trim());
-});
-
-async function processTask(ctx, chatId, msgId, prompt) {
-  inFlight.set(chatId, 'running');
-  let accumulated = '', lastEdit = 0, toolStatus = '';
-  const flush = async (final) => {
-    if (!accumulated && !final) return;
-    if (!final && Date.now() - lastEdit < UPDATE_INTERVAL) return;
-    lastEdit = Date.now();
-    const body = accumulated.slice(-3600);
-    const indicator = final ? '' : (toolStatus ? '\n\n' + toolStatus + '\n...' : '\n\nДумаю...');
-    await safeEdit(ctx, chatId, msgId, body + indicator);
-  };
-  try {
-    const { text: result, sessionId: newSid, toolsUsed } = await runClaude(prompt, {
-      sessionId: sessions.get(chatId),
-      onChunk: async chunk => { if (inFlight.get(chatId) === 'cancelled') return; accumulated += chunk; toolStatus = ''; await flush(false); },
-      onTool: async tool => { if (inFlight.get(chatId) === 'cancelled') return; toolStatus = tool.label + (tool.detail ? ': ' + tool.detail : ''); await flush(false); },
-    });
-    if (newSid) sessions.set(chatId, newSid);
-    if (!accumulated) accumulated = result;
-    if (toolsUsed && toolsUsed.length > 0) {
-      accumulated += '\n\n─────\nИспользовано: ' + toolsUsed.map(t => t.label + (t.detail ? ' ' + t.detail.slice(0, 30) : '')).join(', ');
-    }
-    if (accumulated.length > 4000) {
-      const parts = splitText(accumulated, 4000);
-      await safeEdit(ctx, chatId, msgId, parts[0]);
-      for (let i = 1; i < parts.length; i++) await ctx.reply(parts[i]);
-    } else { await safeEdit(ctx, chatId, msgId, accumulated); }
-  } catch (err) {
-    await safeEdit(ctx, chatId, msgId, 'Ошибка: ' + ((err && err.message) || String(err)));
-  } finally { inFlight.delete(chatId); }
-}
-
-bot.catch(err => console.error('Bot error:', err.message));
-bot.start();
-console.log('Claude Code Telegram bridge started.');
-console.log('Work dir:', WORK_DIR);
-console.log('Allowed IDs:', ALLOWED_IDS.length ? ALLOWED_IDS.join(', ') : 'ALL');
-console.log('Voice:', OPENAI_API_KEY ? 'enabled' : 'disabled');
-"""
-
-# ── .env (preserve existing token if present) ────────────────────────────────
 env_path = os.path.join(BASE, '.env')
 if not os.path.exists(env_path):
-    env_content = """TELEGRAM_BOT_TOKEN=8766937307:AAGm1YC9VWsVLH-_hlDDdj8WSLqyynXvGFA
+    with open(env_path, 'w') as f:
+        f.write("""TELEGRAM_BOT_TOKEN=8766937307:AAGm1YC9VWsVLH-_hlDDdj8WSLqyynXvGFA
 ALLOWED_USER_IDS=1264067528
 WORK_DIR=/home/user/VPS-ClaudeCode
 CLAUDE_BIN=
 CLAUDE_TIMEOUT_MS=300000
 STREAM_UPDATE_INTERVAL_MS=2000
 OPENAI_API_KEY=
-"""
-    with open(env_path, 'w') as f:
-        f.write(env_content)
+""")
     print('.env created')
 else:
-    # Add OPENAI_API_KEY if missing
     with open(env_path, 'r') as f:
-        content = f.read()
-    if 'OPENAI_API_KEY' not in content:
+        c = f.read()
+    if 'OPENAI_API_KEY' not in c:
         with open(env_path, 'a') as f:
             f.write('\nOPENAI_API_KEY=\n')
-        print('.env updated (added OPENAI_API_KEY)')
-    else:
-        print('.env already exists, skipped')
+    print('.env already exists, skipped')
 
-with open(os.path.join(BASE, 'claude-runner.js'), 'w') as f:
-    f.write(runner)
-print('claude-runner.js written')
+pkg = os.path.join(BASE, 'package.json')
+if not os.path.exists(pkg):
+    with open(pkg, 'w') as f:
+        f.write('{"name":"vps-claude-telegram-bridge","version":"1.0.0","main":"bot.js","type":"commonjs","dependencies":{"dotenv":"^16.4.5","grammy":"^1.42.0"}}')
+    print('package.json created')
 
-with open(os.path.join(BASE, 'bot.js'), 'w') as f:
-    f.write(bot)
-print('bot.js written')
-
-print('\nDone! Now run:')
-print('  cd /home/user/VPS-ClaudeCode && npm install && pm2 restart claude-telegram-bridge')
+print()
+print('Done! Run:')
+print('  npm install && pm2 restart claude-telegram-bridge')
+print('  Then in Telegram: /ping')

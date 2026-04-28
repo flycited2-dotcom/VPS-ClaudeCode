@@ -27,6 +27,7 @@ function runClaude(prompt, { onChunk, onTool, sessionId } = {}) {
       '--print',
       '--output-format', 'stream-json',
       '--dangerously-skip-permissions',
+      '--append-system-prompt', 'Всегда отвечай на русском языке. Используй русский для любых объяснений, комментариев и сообщений.',
     ];
     if (sessionId) args.push('--resume', sessionId);
     args.push(prompt);

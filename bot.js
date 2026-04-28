@@ -81,6 +81,7 @@ async function transcribeVoice(filePath) {
 bot.command('start', ctx => ctx.reply(
   'Claude Code Bridge\n\n' +
   'Отправь любую задачу текстом или голосом — выполню на VPS.\n\n' +
+  '/ping    — проверить что Claude Code работает\n' +
   '/reset   — новая сессия (сброс контекста)\n' +
   '/status  — ID текущей сессии\n' +
   '/cancel  — отменить выполняющуюся задачу\n' +
@@ -108,6 +109,28 @@ bot.command('cancel', ctx => {
 });
 
 bot.command('where', ctx => ctx.reply('Рабочая папка: ' + WORK_DIR));
+
+bot.command('ping', async ctx => {
+  const start = Date.now();
+  const msg = await ctx.reply('Проверяю Claude Code...');
+  try {
+    const { execSync } = require('child_process');
+    const claudeBin = process.env.CLAUDE_BIN || 'claude';
+    const version = execSync(claudeBin + ' --version 2>&1', { encoding: 'utf8' }).trim();
+    const elapsed = Date.now() - start;
+    await ctx.api.editMessageText(ctx.chat.id, msg.message_id,
+      'Claude Code работает\n\n' +
+      'Версия: ' + version + '\n' +
+      'Путь: ' + claudeBin + '\n' +
+      'Рабочая папка: ' + WORK_DIR + '\n' +
+      'Время ответа: ' + elapsed + ' мс'
+    );
+  } catch (e) {
+    await ctx.api.editMessageText(ctx.chat.id, msg.message_id,
+      'Claude Code не найден\n\nОшибка: ' + e.message + '\n\nПроверь CLAUDE_BIN в .env'
+    );
+  }
+});
 
 bot.command('logs', async (ctx) => {
   try {
