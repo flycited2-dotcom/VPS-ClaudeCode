@@ -55,18 +55,23 @@ if claude_bin:
 else:
     print('  Claude:  НЕ НАЙДЕН — проверь установку')
 
-# Проверить API ключ
+# Проверить авторизацию Claude (OAuth или API ключ)
 api_key = os.environ.get('ANTHROPIC_API_KEY', '')
-if not api_key:
-    # Попробовать найти в конфиге claude
-    for cfg in ['/root/.claude/.env', '/root/.config/claude/.env', '/root/.claude/config']:
-        if os.path.exists(cfg):
-            with open(cfg) as f:
-                for line in f:
-                    if 'ANTHROPIC_API_KEY' in line:
-                        api_key = line.split('=',1)[-1].strip().strip('"')
-                        break
-print(f'  ANTHROPIC_API_KEY: {"найден" if api_key else "НЕ НАЙДЕН (Claude не сможет отвечать!)"}')
+oauth_ok = False
+oauth_files = ['/root/.claude/settings.json', '/root/.claude/.credentials.json',
+               '/root/.config/claude/settings.json']
+for f in oauth_files:
+    if os.path.exists(f):
+        oauth_ok = True
+        break
+
+if api_key:
+    print(f'  Авторизация: API ключ (ANTHROPIC_API_KEY)')
+elif oauth_ok:
+    print(f'  Авторизация: OAuth сессия (claude.ai) — работает без API ключа')
+else:
+    print(f'  Авторизация: НЕ НАЙДЕНА!')
+    print(f'  Запусти вручную: {claude_bin or "claude"} — войди через браузер, затем повтори setup.py')
 
 # ── Шаг 2: Создать папку и package.json ──────────────────────────────────────
 
@@ -108,7 +113,7 @@ defaults = {
     'CLAUDE_TIMEOUT_MS': '300000',
     'STREAM_UPDATE_INTERVAL_MS': '2000',
     'OPENAI_API_KEY': '',
-    'ANTHROPIC_API_KEY': api_key,
+    # ANTHROPIC_API_KEY не добавляем — Claude Code использует OAuth из ~/.claude/
 }
 for k, v in defaults.items():
     if k not in existing:

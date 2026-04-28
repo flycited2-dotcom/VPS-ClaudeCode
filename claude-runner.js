@@ -4,6 +4,13 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const WORK_DIR = process.env.WORK_DIR || process.cwd();
 const TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS || '300000', 10);
 
+function buildEnv() {
+  const env = { ...process.env };
+  // Удаляем пустой ключ — Claude Code использует OAuth сессию из ~/.claude/
+  if (!env.ANTHROPIC_API_KEY) delete env.ANTHROPIC_API_KEY;
+  return env;
+}
+
 const TOOL_LABELS = {
   Bash: '🖥 Bash',
   Edit: '✏️ Edit',
@@ -34,7 +41,7 @@ function runClaude(prompt, { onChunk, onTool, sessionId } = {}) {
 
     const proc = spawn(CLAUDE_BIN, args, {
       cwd: WORK_DIR,
-      env: process.env,
+      env: buildEnv(),
     });
 
     let fullText = '';
