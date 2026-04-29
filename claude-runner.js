@@ -42,6 +42,7 @@ function runClaude(prompt, { onChunk, onTool, sessionId } = {}) {
     const proc = spawn(CLAUDE_BIN, args, {
       cwd: WORK_DIR,
       env: buildEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let fullText = '';
